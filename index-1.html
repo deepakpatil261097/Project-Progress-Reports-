@@ -94,7 +94,7 @@ async function init(){
  let s=null;if(db){try{const r=await db.doc('state/'+me.id).get();s=r.exists?r.data():null}catch(e){}}else s=LS('st');
  S=Object.assign({project:{code:'',name:'',client:''},team:'',cur:'',pr:{},sd:{},tasks:[],pts:[],pd:'',iss:[]},s||{});
  if(S.pd!==today){S.pts=[];S.pd=today;S.sd={}}
- S.pr=S.pr||{};if(!S.cur&&S.project&&S.project.code)S.cur=S.project.code;[S.tasks].concat(Object.values(S.pr).map(v=>v.tasks||[])).forEach(L=>L.forEach(t=>{if(!t.as)t.as=t.s}));PE=!S.cur||!S.team||!me.name||(!!CFG.t&&!LS('pin'));
+ S.pr=S.pr||{};if(!S.cur&&S.project&&S.project.code)S.cur=S.project.code;dedupeS();[S.tasks].concat(Object.values(S.pr).map(v=>v.tasks||[])).forEach(L=>L.forEach(t=>{if(!t.as)t.as=t.s}));PE=!S.cur||!S.team||!me.name||(!!CFG.t&&!LS('pin'));
  if(db){try{db.collection('days').onSnapshot(q=>{DAYS=q.docs.map(d=>d.data());names();if(cur==='rep')render()},()=>{})}catch(e){}}else DAYS=LS('days')||[];DAYS.forEach(d=>{if(d.name)NAMES[d.uid]=d.name});
  if(db){try{db.collection('projects').onSnapshot(q=>{PROJ=q.docs.map(d=>d.data());fixCur();if(cur!=='close'&&!($('pc')&&($('pc').value||$('pn2').value)))render()},()=>{})}catch(e){}}else PROJ=LS('projs')||[];
  if(S.project&&S.project.code&&!S.mg){S.mg=1;putProj(S.project).catch(()=>{});save()}
@@ -105,15 +105,17 @@ async function delProj(c){if(CFG.u&&ADM)return;PROJ=PROJ.filter(x=>x.code!==c);L
 function fixCur(){if(!S)return;let ch=0;const map={};PROJ.forEach(m=>(m.prev||[]).forEach(o=>{if(o!==m.code&&!PROJ.some(x=>x.code===o))map[o]=m.code}));
  Object.entries(map).forEach(e=>{const o=e[0],n=e[1];if(S.pr&&S.pr[o]){if(S.pr[n]){S.pr[n].tasks=(S.pr[n].tasks||[]).concat(S.pr[o].tasks||[])}else S.pr[n]=S.pr[o];delete S.pr[o];ch=1}if(S.cur===o){S.cur=n;ch=1}});
  if(S.cur&&S.pr&&S.pr[S.cur]){S.tasks=S.tasks.concat(S.pr[S.cur].tasks||[]);delete S.pr[S.cur];ch=1}
- (S.iss||[]).forEach(i=>{if(map[i.pc]){i.pc=map[i.pc];ch=1}});DAYS.forEach(d=>{const c=d.pc||(d.pj&&d.pj.code);if(map[c]){d.pc=map[c];if(d.pj)d.pj.code=map[c];ch=1}});if(ch){LW('days',DAYS);save()}}
+ (S.iss||[]).forEach(i=>{if(map[i.pc]){i.pc=map[i.pc];ch=1}});DAYS.forEach(d=>{const c=d.pc||(d.pj&&d.pj.code);if(map[c]){d.pc=map[c];if(d.pj)d.pj.code=map[c];ch=1}});const dp=dedupeS();if(ch||dp){LW('days',DAYS);save()}}
 async function putProj(p){if(CFG.u&&ADM){const ex=PA.find(x=>x.code===(p.old||p.code));if(!await saveProj({code:p.code,name:p.name,client:p.client,ps:ex?ex.ps:'',pe:ex?ex.pe:'',ms:ex?ex.ms:[],active:true,old:p.old}))throw new Error('save');return}PROJ=PROJ.filter(x=>x.code!==p.code).concat([Object.assign({active:true,ms:[]},p)]);LW('projs',PROJ)}
+function dedupeS(){if(!S)return 0;let ch=0;const seen={},uq=L=>{const o=[];(L||[]).forEach(t=>{const k=t.id||t.n+'|'+t.s;if(seen[k]){ch=1;return}seen[k]=1;o.push(t)});return o};
+ S.tasks=uq(S.tasks);Object.keys(S.pr||{}).forEach(k=>{if(k===S.cur){delete S.pr[k];ch=1;return}S.pr[k].tasks=uq(S.pr[k].tasks)});return ch}
 function adopt(q,days){S.tasks=(Array.isArray(q.tasks)?q.tasks:[]).slice(0,300).map(ctf);S.pr={};Object.entries(q.pr||{}).slice(0,50).forEach(e2=>{S.pr[sx(e2[0],40)]={tasks:((e2[1]&&e2[1].tasks)||[]).slice(0,300).map(ctf),pts:[],pd:'',iss:[],sd:{}}});
  S.iss=(Array.isArray(q.iss)?q.iss:[]).slice(0,100).map(ci);S.cur=sx(q.cur,40)||S.cur;const td=q.pd===today,sd=q.sd||{};
  S.pts=td&&Array.isArray(q.pts)?q.pts.slice(0,100).map(p=>({c:sx(p.c,40),t:sx(p.t,500),a:p.a?1:0})):[];S.sd=td?{mp:sx(sd.mp,6),eq:sx(sd.eq,120),wx:sx(sd.wx,30),sf:sx(sd.sf,200)}:{};S.pd=today;
- DAYS=DAYS.filter(d=>d.uid!==me.id).concat((days||[]).map(cl).filter(Boolean));LW('days',DAYS);LW('st',S)}
+ DAYS=DAYS.filter(d=>d.uid!==me.id).concat((days||[]).map(cl).filter(Boolean));LW('days',DAYS);dedupeS();LW('st',S)}
 async function pull(){if(!CFG.u||!CFG.t||DIRTY||!LS('pin')||!S||Date.now()-lastPull<15000)return;lastPull=Date.now();
  try{const r=await api({a:'pull',tp:CFG.t,uid:me.id,pin:LS('pin')});if(!r.ok||String(r.updated)===String(LS('syncAt'))||DIRTY)return;adopt(r.state||{},r.days);LW('syncAt',r.updated);fixCur();if(canRender()){const y=window.scrollY;render();window.scrollTo(0,y)}}catch(e){}}
-function switchTo(c){if(c===S.cur)return;if(S.cur)S.pr[S.cur]={tasks:S.tasks,pts:S.pts,pd:S.pd,iss:S.iss,sd:S.sd};const n=S.pr[c]||{tasks:[],pts:[],pd:today,iss:[],sd:{}};S.tasks=n.tasks||[];S.pts=n.pd===today?(n.pts||[]):[];S.sd=n.pd===today?(n.sd||{}):{};S.pd=today;S.iss=n.iss||[];S.cur=c}
+function switchTo(c){if(c===S.cur)return;if(S.cur)S.pr[S.cur]={tasks:S.tasks,pts:S.pts,pd:S.pd,iss:S.iss,sd:S.sd};const n=S.pr[c]||{tasks:[],pts:[],pd:today,iss:[],sd:{}};S.tasks=n.tasks||[];S.pts=n.pd===today?(n.pts||[]):[];S.sd=n.pd===today?(n.sd||{}):{};S.pd=today;S.iss=n.iss||[];S.cur=c;delete S.pr[c]}
 const ring=(p,c)=>`<svg class="rg" width="52" height="52" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="20" style="stroke:var(--bd)"/><circle cx="26" cy="26" r="20" class="${c}" stroke-linecap="round" stroke-dasharray="${(125.66*p/100).toFixed(1)} 125.66" transform="rotate(-90 26 26)"/><text x="26" y="30" text-anchor="middle">${p}%</text></svg>`;
 function hero(){const td=S.tasks.filter(t=>t.sc===today),a=avg(td),pend=S.tasks.filter(t=>t.p<100),late=pend.filter(t=>st(t,today).k===0).length;
  return `<div class="hero"><div class="mu2">Today's progress</div><div class="hr"><b class="hb" id="hv">${td.length?a+'%':'-'}</b><div class="mu2" style="text-align:right">${td.length} scheduled<br>${pend.length} pending · ${late} delayed</div></div><div class="hbar"><i id="hbar" style="width:${a}%"></i></div></div>`}
@@ -315,7 +317,11 @@ async function cfgFetch(){if(!CFG.u||(!CFG.t&&!ADM))return;try{const r=await api
  if(ADM&&!(r.projects||[]).length&&loc.length){for(const p of loc)await api({a:'saveproj',ap:ADM,code:p.code,name:p.name,client:p.client,active:true});const r2=await api({a:'cfg',tp:CFG.t,ap:ADM});r.projects=r2.projects||[]}
  PROJ=(r.projects||[]).map(cp);TPL=(r.templates||[]).map(x=>sx(x,60));LW('projs',PROJ);LW('tpl',TPL);fixCur();if(canRender())render()}catch(e){}}
 async function loadTeam(sl){if(!sl){TS=null;render()}try{const r=await api({a:'all',ap:ADM});if(!r.ok)throw 0;
- TS=r.states.map(x=>{const q=x.state||{};return{uid:idc(x.uid),name:sx(x.name,60),team:sx(x.team,40),upd:isNaN(+x.updated)?sx(x.updated,30):+x.updated,T:tasksOf(q),iss:(Array.isArray(q.iss)?q.iss:[]).slice(0,100).map(ci)}});
+ const TS0=r.states.map(x=>{const q=x.state||{};return{uid:idc(x.uid),name:sx(x.name,60),team:sx(x.team,40),upd:isNaN(+x.updated)?sx(x.updated,30):+x.updated,T:tasksOf(q),iss:(Array.isArray(q.iss)?q.iss:[]).slice(0,100).map(ci)}});
+ const dupT=L=>{const m={};L.forEach(t=>{const k=t.pc+'|'+t.n+'|'+t.s,o=m[k];if(!o||t.p>o.p||(t.p===o.p&&t.sc===today&&o.sc!==today))m[k]=t});return Object.values(m)},mk=new Map();
+ TS0.forEach(m=>{const k=(m.name||m.uid).trim().toLowerCase()+'|'+m.team,o=mk.get(k);if(!o){mk.set(k,Object.assign({},m,{uids:[m.uid],T:dupT(m.T),iss:m.iss.slice()}));return}
+  o.uids.push(m.uid);o.T=dupT(o.T.concat(m.T));const seen=new Set(o.iss.map(i=>i.pc+'|'+i.t+'|'+i.d));m.iss.forEach(i=>{if(!seen.has(i.pc+'|'+i.t+'|'+i.d))o.iss.push(i)});if(String(m.upd)>String(o.upd))o.upd=m.upd});
+ TS=[...mk.values()];
  ALL=r.days.map(cl).filter(Boolean);ALL.forEach(d=>{if(d.name)NAMES[d.uid]=d.name});
  const rt=await api({a:'teams',ap:ADM});if(rt.ok)TL=rt.teams.map(t=>({name:sx(t.name,40),code:sx(t.code,30),active:!!t.active}));
  const rp=await api({a:'projects',ap:ADM});if(rp.ok){PA=rp.projects.map(cp);TPA=(rp.templates||[]).map(x=>sx(x,60))}}catch(e){if(!sl){TS=[];msg('Could not load the team. Check the admin passcode and connection.')}}if(!sl||canRender()){const y=window.scrollY;render();if(sl)window.scrollTo(0,y)}}
@@ -327,7 +333,7 @@ const flt=()=>{const ps=[...new Set((TS||[]).flatMap(m=>m.T.map(t=>t.pc)).concat
  return `<div class="g2" style="margin:0 0 10px"><select id="pw" aria-label="Project"><option value="all">All projects</option>${ps.map(x=>`<option value="${esc(x)}"${x===PW?' selected':''}>${esc(x)}</option>`).join('')}</select><select id="team" aria-label="Team"><option value="all">All teams</option>${ts.map(x=>`<option${x===TW?' selected':''}>${esc(x)}</option>`).join('')}</select></div>`};
 function vPeople(){const all=TT(),late=all.filter(t=>t.p<100&&st(t,today).k===0).sort((a,b)=>dd(today,b.s)-dd(today,a.s)).slice(0,6),
  M=TS.filter(m=>TW==='all'||m.team===TW).map(m=>{const T=m.T.filter(t=>PW==='all'||t.pc===PW);return{m,T,g:{done:T.filter(t=>t.p>=100),on:T.filter(t=>t.p>0&&t.p<100),ns:T.filter(t=>!t.p)}}}),
- miss=M.filter(x=>!(ALL||[]).some(d=>d.uid===x.m.uid&&d.date===today)),iss=issuesAll();
+ miss=M.filter(x=>!(ALL||[]).some(d=>(x.m.uids||[x.m.uid]).includes(d.uid)&&d.date===today)),iss=issuesAll();
  const att=`<div class="cd"><h3>Needs attention</h3>`+(late.length||miss.length||iss.length?late.map(t=>`<div class="d1"><span class="pl no">Delayed</span> <span class="pl ab">${esc(t.pc)}</span> ${esc(t.n)} <span class="mu">· ${esc(t.who)}${t.dr?' · '+esc(t.dr):''}</span></div>`).join('')+(miss.length?`<div class="d1"><span class="pl wn">No report today</span> ${miss.map(x=>esc(x.m.name||'Unnamed')).join(', ')}</div>`:'')+iss.slice(0,5).map(i=>`<div class="d1"><span class="pl ab">Issue · ${dd(today,i.d)} d open</span> ${esc(i.c)}: ${esc(i.t)} <span class="mu">· ${esc(i.who)}</span></div>`).join(''):'<div class="em">Nothing needs attention right now.</div>')+`</div>`;
  const c3=cnt3(all);
  return att+`<div class="mg"><div><div class="mu">Completed</div><div class="big">${c3.a}</div></div><div><div class="mu">Ongoing</div><div class="big">${c3.b}</div></div><div><div class="mu">Not started</div><div class="big">${c3.c}</div></div><div><div class="mu">Delayed</div><div class="big" style="color:var(--no)">${late.length}</div></div></div>`
@@ -457,7 +463,7 @@ document.addEventListener('click',async e=>{
   if(!r.ok){msg(r.err||'No saved data found for that name and PIN');return}
   me.id=idc(r.uid)||me.id;me.name=nv;LW('uid',me.id);LW('uname',nv);LW('pin',pn);const q=r.state||{};
   S.tasks=(Array.isArray(q.tasks)?q.tasks:[]).slice(0,300).map(ctf);S.pr={};Object.entries(q.pr||{}).slice(0,50).forEach(e2=>{S.pr[sx(e2[0],40)]={tasks:((e2[1]&&e2[1].tasks)||[]).slice(0,300).map(ctf),pts:[],pd:'',iss:[],sd:{}}});
-  S.iss=(Array.isArray(q.iss)?q.iss:[]).slice(0,100).map(ci);S.cur=sx(q.cur,40)||S.cur;S.pts=[];S.sd={};S.pd=today;
+  S.iss=(Array.isArray(q.iss)?q.iss:[]).slice(0,100).map(ci);S.cur=sx(q.cur,40)||S.cur;S.pts=[];S.sd={};S.pd=today;dedupeS();
   DAYS=DAYS.filter(d=>d.uid!==me.id).concat((r.days||[]).map(cl).filter(Boolean));LW('days',DAYS);PE=false;save();msg('Your data was restored');render();return}
  else if(a==='mg'){const f=$('mg1').value,t2=$('mg2').value;if(!f||!t2||f===t2){msg('Choose two different codes');return}if(!confirm('Move all tasks and reports from '+f+' to '+t2+'? This cannot be undone.'))return;
   try{const r=await api({a:'mergeproj',ap:ADM,from:f,to:t2});if(!r.ok){msg(r.err||'Could not move the data');return}PA=r.projects.map(cp);PROJ=PA.filter(x=>x.active);LW('projs',PROJ);fixCur();msg('Moved. Reloading the team data…');await loadTeam()}catch(er){msg('Could not reach the team server')}return}
